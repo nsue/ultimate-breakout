@@ -129,6 +129,8 @@
           'paddle_big.png'
         );
 
+    remotePlayers[player].paddle.alpha = 0.5;
+
     remotePlayers[player].paddle.anchor.setTo(0.5, 0.5);
     game.physics.enable(remotePlayers[player].paddle, Phaser.Physics.ARCADE);
     remotePlayers[player].paddle.body.collideWorldBounds = true;
