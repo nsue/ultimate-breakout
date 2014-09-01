@@ -34,7 +34,11 @@
   var TEXT_Y = 550;
 
   var socket;
+  var localPlayerName;
+  var localPlayerID;
   var remotePlayers = {};
+
+  var $leaderboard = $("#leaderboard-table-body");
 
   function preload() {
     console.log('preload invoked');
@@ -61,6 +65,8 @@
     createText();
 
     game.input.onDown.add(releaseBall, this);
+
+    initializeMixItUp();
 
     socket = io.connect(window.location.hostname);
     attachSocketHandlers();
@@ -129,14 +135,30 @@
     infoText.anchor.setTo(0.5, 0.5);
   }
 
+  function initializeMixItUp() {
+    $(function(){
+      $leaderboard.mixItUp({
+        selectors: {
+          target: "tr"
+        },
+        layout: {
+          display: 'block'
+        }
+      });
+    });
+  }
+
   function attachSocketHandlers() {
     console.log('attachSocketHandlers invoked');
     socket.on('connect', onSocketConnect);
     socket.on('disconnect', onSocketDisconnect);
+    socket.on('local player', onLocalPlayer);
     socket.on('new player', onNewPlayer);
     socket.on('remove player', onRemovePlayer);
     socket.on('initial bricks', onInitialBricks);
     socket.on('brick kill to other clients', onBrickKillToOtherClients);
+    socket.on('update local score', onUpdateLocalScore);
+    socket.on('update remote score', onUpdateRemoteScore);
   }
 
   function onSocketConnect() {
@@ -149,10 +171,44 @@
     console.log('onSocketDisconnect invoked');
   }
 
+  function onLocalPlayer(data) {
+    localPlayerID = data.id;
+    localPlayerName = data.name;
+    addPlayerToLeaderboard(data);
+  }
+
   function onNewPlayer(data) {
-    console.log('onNewPlayer invoked. data = ' + JSON.stringify(data));
-    remotePlayers[data.id] = { score: data.score };
+    console.log('onNewPlayer invoked.');
+    remotePlayers[data.id] = {
+      name: data.name,
+      score: data.score
+    };
+    addPlayerToLeaderboard(data);
     console.log(data.id + ' added to remotePlayers: ' + JSON.stringify(remotePlayers));
+  }
+
+  function addPlayerToLeaderboard(message) {
+    var playerScore;
+    var $tr;
+    var $tdScore;
+    var $tdName;
+
+    if (message.hasOwnProperty('score')) {
+      // remote player
+      playerScore = message.score;
+    } else {
+      // local player
+      playerScore = score;
+      message.name += " (You)";
+    }
+
+    $tr = $('<tr></tr>');
+    $tr.attr('data-score', playerScore);
+    $tr.attr('data-id', message.id);
+    $tdScore = $('<td></td>').text(playerScore);
+    $tdName = $('<td></td>').text(message.name);
+
+    $tr.append($tdScore).append($tdName).appendTo($leaderboard);
   }
 
   function onRemovePlayer(data) {
@@ -183,6 +239,29 @@
   function onBrickKillToOtherClients(data) {
     console.log('onBrickKillToOtherClients invoked');
     bricks.children[data.brickIndex].kill();
+  }
+
+  function onUpdateLocalScore(data) {
+    console.log('onLocalRemoteScore invoked');
+    score = data.score;
+    scoreText.text = 'score: ' + score;
+    updateLeaderboard(data);
+  }
+
+  function onUpdateRemoteScore(data) {
+    console.log('onUpdateRemoteScore invoked');
+    remotePlayers[data.id].score = data.score;
+    updateLeaderboard(data);
+  }
+
+  function updateLeaderboard(message) {
+    var $tr = $leaderboard.find("[data-id='" + message.id + "']");
+    $tr.attr('data-score', message.score);
+
+    var $tdScore = $tr.children().first();
+    $tdScore.text(message.score);
+
+    $leaderboard.mixItUp('sort', 'score:desc');
   }
 
   function update() {
@@ -237,8 +316,6 @@
     bricks.callAll('revive');
     if (lives !==0 ) {
       putBallOnPaddle();
-      score += 1000;
-      scoreText.text = 'score: ' + score;
       infoText.text = 'Next Round';
     }
   }
@@ -252,11 +329,7 @@
 
   function ballHitBrick(_ball, _brick) {
     socket.emit('brick kill from client', { brickIndex: _brick.brickIndex });
-
     _brick.kill();
-
-    score += 10;
-    scoreText.text = 'score: ' + score;
   }
 
   function ballHitPaddle(_ball, _paddle) {
